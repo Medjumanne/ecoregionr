@@ -1,0 +1,39 @@
+Package: ecoregionr
+Title: Environmental Bioregionalization and Clustering Toolkit
+Version: 0.2.0
+Authors@R: 
+    person("Mohamed Jumanne", "Omari", 
+           email = "momari@ihi.or.tz", 
+           role = c("aut", "cre"),
+           comment = c(ORCID = "YOUR-ORCID-HERE"))
+Description: Tools for data-driven environmental bioregionalization and 
+    ecological clustering of administrative units using raster covariates 
+    (climate, elevation, land cover, population, etc.), PCA + consensus 
+    k-means, interactive maps, and natural language descriptions.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3
+Depends: R (>= 4.2)
+Imports: 
+    sf (>= 1.0),
+    terra (>= 1.7),
+    dplyr (>= 1.1),
+    tidyr (>= 1.3),
+    purrr (>= 1.0),
+    ggplot2 (>= 3.4),
+    viridis (>= 0.6),
+    leaflet (>= 2.2),
+    htmlwidgets,
+    htmltools,
+    NbClust,
+    factoextra,
+    cluster,
+    ggspatial,
+    RColorBrewer,
+    rmapshaper,
+    rnaturalearth,
+    rnaturalearthdata
+Suggests:
+    devtools,
+    testthat (>= 3.0)
