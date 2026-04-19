@@ -37,3 +37,32 @@ lc_lookup <- c(
   "5" = "Crops", "7" = "Built Area", "8" = "Bare ground",
   "9" = "Snow/Ice", "11" = "Rangeland"
 )
+
+
+
+packages <- c(
+  "terra", "sf", "dplyr", "tidyr", "ggplot2",
+  "rnaturalearth", "rnaturalearthdata", "leaflet",
+  "htmlwidgets", "cluster", "NbClust", "factoextra",
+  "viridis", "ggspatial", "purrr"
+)
+
+for (pkg in packages) {
+
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("Installing package: ", pkg, " (including dependencies...)")
+
+    install.packages(
+      pkg,
+      dependencies = TRUE,
+      quiet = FALSE
+    )
+  } else {
+    message("Package already installed: ", pkg)
+  }
+
+  suppressPackageStartupMessages(
+    library(pkg, character.only = TRUE)
+  )
+}
+
