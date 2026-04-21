@@ -29,8 +29,8 @@ cluster_pca_kmeans <- function(df,
                                id_col     = "ID",
                                min_k      = MIN_K,
                                max_k      = MAX_K,
-                               pca_var    = 0.90,
-                               nstart     = 100,
+                               pca_var    = PCA_VAR,
+                               nstart     = NSTART,
                                visualize  = TRUE,
                                seed       = 1) {
 
