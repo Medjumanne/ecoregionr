@@ -27,10 +27,10 @@
 cluster_pca_kmeans <- function(df,
                                group_col  = NULL,
                                id_col     = "ID",
-                               min_k      = 6,
-                               max_k      = 15,
+                               min_k      = MIN_K,
+                               max_k      = MAX_K,
                                pca_var    = 0.90,
-                               nstart     = 50,
+                               nstart     = 100,
                                visualize  = TRUE,
                                seed       = 1) {
 
