@@ -25,16 +25,15 @@
 #'         `k_used` (integer), and PC score columns (PC1, PC2, …).
 #'@export
 cluster_pca_kmeans <- function(df,
-                               group_col = NULL,
-                               id_col = "ID",
-                               min_k = MIN_K,
-                               max_k = MAX_K,
-                               pca_var = PCA_VAR,
-                               nstart = NSTART,
+                               group_col   = NULL,
+                               id_col      = "ID",
+                               min_k       = 6,
+                               max_k       = 15,
+                               pca_var     = 0.90,
+                               nstart      = 50,
                                strict_mode = FALSE,
-                               visualize = TRUE,
-                               seed = 1) {
-
+                               visualize   = TRUE,
+                               seed        = 1) {
   set.seed(seed)
 
   group_label <- if (!is.null(group_col)) unique(df[[group_col]])[1] else "group"
