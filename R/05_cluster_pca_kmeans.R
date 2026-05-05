@@ -80,6 +80,14 @@ cluster_pca_kmeans <- function(df,
   # -----------------------------
   X_scaled <- scale(X)
 
+  # Apply weights if provided
+  if (!is.null(weights)) {
+    # Check which columns in X match your weight list
+    common_vars <- intersect(names(weights), colnames(X_scaled))
+    for (v in common_vars) {
+      X_scaled[, v] <- X_scaled[, v] * weights[[v]]
+    }
+  }
   # -----------------------------
   # 3. PCA
   # -----------------------------
