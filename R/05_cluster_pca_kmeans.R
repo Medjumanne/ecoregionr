@@ -163,21 +163,14 @@ cluster_pca_kmeans <- function(df,
   # 7. Visualization
   # -----------------------------
   if (visualize) {
+    tryCatch({
+      cat("\n=== Visual diagnostics for", group_label, "===\n")
 
-    cat("\n=== Visual diagnostics for", group_label, "===\n")
-
-    print(
-      fviz_eig(pca_res, addlabels = TRUE, ncp = 15) +
-        geom_vline(xintercept = n_pc, linetype = "dashed",
-                   color = "red", linewidth = 1) +
+      p1 <- fviz_eig(pca_res, addlabels = TRUE, ncp = 15) +
+        geom_vline(xintercept = n_pc, linetype = "dashed", color = "red", linewidth = 1) +
         labs(title = paste("PCA Scree Plot -", group_label))
-    )
 
-    library(RColorBrewer)
-    pal <- colorRampPalette(brewer.pal(12, "Paired"))(max(10, k_opt))
-
-    print(
-      fviz_pca_ind(
+      p2 <- fviz_pca_ind(
         pca_res,
         geom = "point",
         habillage = final_km$cluster,
@@ -186,14 +179,17 @@ cluster_pca_kmeans <- function(df,
         ellipse.type = "convex",
         title = paste("PCA Clusters -", group_label)
       )
-    )
 
-    sil_obj <- silhouette(final_km$cluster, dist(pca_data))
-    print(
-      fviz_silhouette(sil_obj) +
+      sil_obj <- silhouette(final_km$cluster, dist(pca_data))
+      p3 <- fviz_silhouette(sil_obj) +
         labs(title = paste("Silhouette (k =", k_opt, ") -", group_label))
-    )
-  }
 
+      print(p1)
+      print(p2)
+      print(p3)
+    }, error = function(e) {
+      message(group_label, " | Visualization failed: ", e$message)
+    })
+  }
   return(df)
 }
