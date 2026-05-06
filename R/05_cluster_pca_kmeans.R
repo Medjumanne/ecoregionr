@@ -166,27 +166,51 @@ cluster_pca_kmeans <- function(df,
     tryCatch({
       cat("\n=== Visual diagnostics for", group_label, "===\n")
 
-      p1 <- fviz_eig(pca_res, addlabels = TRUE, ncp = 15) +
-        geom_vline(xintercept = n_pc, linetype = "dashed", color = "red", linewidth = 1) +
-        labs(title = paste("PCA Scree Plot -", group_label))
+      if (!is.null(dev.list())) graphics.off()
 
-      p2 <- fviz_pca_ind(
-        pca_res,
-        geom = "point",
-        habillage = final_km$cluster,
-        palette = pal,
-        addEllipses = TRUE,
-        ellipse.type = "convex",
-        title = paste("PCA Clusters -", group_label)
-      )
+      library(RColorBrewer)
+      pal <- colorRampPalette(brewer.pal(12, "Paired"))(max(10, k_opt))
 
-      sil_obj <- silhouette(final_km$cluster, dist(pca_data))
-      p3 <- fviz_silhouette(sil_obj) +
-        labs(title = paste("Silhouette (k =", k_opt, ") -", group_label))
+      p1 <- tryCatch({
+        fviz_eig(pca_res, addlabels = TRUE, ncp = 15) +
+          geom_vline(xintercept = n_pc, linetype = "dashed",
+                     color = "red", linewidth = 1) +
+          labs(title = paste("PCA Scree Plot -", group_label))
+      }, error = function(e) {
+        message(group_label, " | Scree plot failed: ", e$message)
+        NULL
+      })
 
-      print(p1)
-      print(p2)
-      print(p3)
+      p2 <- tryCatch({
+        fviz_pca_ind(
+          pca_res,
+          geom = "point",
+          habillage = factor(final_km$cluster),
+          palette = pal,
+          addEllipses = TRUE,
+          ellipse.type = "convex",
+          label = "none",
+          repel = TRUE
+        ) +
+          labs(title = paste("PCA Clusters -", group_label))
+      }, error = function(e) {
+        message(group_label, " | PCA cluster plot failed: ", e$message)
+        NULL
+      })
+
+      p3 <- tryCatch({
+        sil_obj <- cluster::silhouette(final_km$cluster, dist(pca_data))
+        fviz_silhouette(sil_obj) +
+          labs(title = paste("Silhouette (k =", k_opt, ") -", group_label))
+      }, error = function(e) {
+        message(group_label, " | Silhouette plot failed: ", e$message)
+        NULL
+      })
+
+      if (!is.null(p1)) print(p1)
+      if (!is.null(p2)) print(p2)
+      if (!is.null(p3)) print(p3)
+
     }, error = function(e) {
       message(group_label, " | Visualization failed: ", e$message)
     })
