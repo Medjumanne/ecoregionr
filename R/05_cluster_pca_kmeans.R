@@ -1,29 +1,24 @@
+
 # =============================================================================
 # 5. cluster_pca_kmeans  (single-group)
 # =============================================================================
 #' PCA + k-means clustering for one group (e.g. one country).
 #'
-#' Logic is a direct generic port of the original cluster_country_pca_kmeans().
-#' Only the hardcoded column names ("ID", country column) are replaced by
-#' parameters; everything else — NbClust call, vote counting, min/max k
-#' enforcement, silhouette fallback, visualisations — is identical.
-
-#' @param df          Tibble / data.frame for one group.
-#' @param group_col   Name of the grouping column (e.g. "ADM0_NAME").
-#'                    Used for status messages and excluded from clustering.
-#' @param id_col      Name of the unique ID column (excluded from clustering).
-#' @param min_k       Minimum number of clusters to allow (default 6, matching
-#'                    the original NbClust min.nc = 6).
-#' @param max_k       Maximum number of clusters to test (default 15).
-#' @param pca_var     Cumulative variance threshold for PC retention (default 0.90).
-#' @param nstart      k-means nstart for the final run (default 50).
-#' @param visualize   Logical – print consensus dot-plot, scree, PCA, and
-#'                    silhouette plots (default TRUE).
-#' @param seed        Random seed (default 1).
+#' @param df             Tibble / data.frame for one group.
+#' @param group_col      Name of the grouping column (e.g. "ADM0_NAME").
+#'                       Used for status messages and excluded from clustering.
+#' @param id_col         Name of the unique ID column (excluded from clustering).
+#' @param min_k          Minimum number of clusters to allow (default 6).
+#' @param max_k          Maximum number of clusters to test (default 15).
+#' @param pca_var        Cumulative variance threshold for PC retention (default 0.90).
+#' @param nstart         k-means nstart for the final run (default 50).
+#' @param weights        Named vector of variable weights for PCA (e.g. c("elev_median" = 3)).
+#' @param strict_mode    Force strict parameter settings.
+#' @param visualize      Print diagnostic plots.
+#' @param seed           Random seed.
 #'
-#' @return The input data frame with extra columns: `cluster` (factor),
-#'         `k_used` (integer), and PC score columns (PC1, PC2, …).
-#'@export
+#' @return Data frame with `cluster`, `k_used`, and PC score columns.
+#' @export
 cluster_pca_kmeans <- function(df,
                                group_col   = NULL,
                                id_col      = "ID",
@@ -31,6 +26,7 @@ cluster_pca_kmeans <- function(df,
                                max_k       = 15,
                                pca_var     = 0.90,
                                nstart      = 50,
+                               weights     = NULL,
                                strict_mode = FALSE,
                                visualize   = TRUE,
                                seed        = 1) {
@@ -38,9 +34,7 @@ cluster_pca_kmeans <- function(df,
 
   group_label <- if (!is.null(group_col)) unique(df[[group_col]])[1] else "group"
 
-  # -----------------------------
   # STRICT MODE OVERRIDES
-  # -----------------------------
   if (strict_mode) {
     min_k   <- 6
     max_k   <- 15
@@ -48,9 +42,7 @@ cluster_pca_kmeans <- function(df,
     nstart  <- 50
   }
 
-  # -----------------------------
   # 1. Prepare data
-  # -----------------------------
   exclude_cols <- unique(c(id_col, if (!is.null(group_col)) group_col))
   X <- df[, !names(df) %in% exclude_cols, drop = FALSE]
 
@@ -60,8 +52,7 @@ cluster_pca_kmeans <- function(df,
   X <- X[, sds > 0, drop = FALSE]
 
   if (length(removed_vars) > 0) {
-    message(group_label, " | Removed ", length(removed_vars),
-            " zero-variance variables")
+    message(group_label, " | Removed ", length(removed_vars), " zero-variance variables")
   }
 
   keep_rows <- apply(X, 1, function(r) all(is.finite(r)))
@@ -75,19 +66,18 @@ cluster_pca_kmeans <- function(df,
     return(df)
   }
 
-  # -----------------------------
   # 2. Scale
-  # -----------------------------
   X_scaled <- scale(X)
 
   # Apply weights if provided
   if (!is.null(weights)) {
-    # Check which columns in X match your weight list
     common_vars <- intersect(names(weights), colnames(X_scaled))
     for (v in common_vars) {
       X_scaled[, v] <- X_scaled[, v] * weights[[v]]
+      message(group_label, " | Weighted ", v, " by ", weights[[v]])
     }
   }
+
   # -----------------------------
   # 3. PCA
   # -----------------------------
@@ -217,3 +207,4 @@ cluster_pca_kmeans <- function(df,
   }
   return(df)
 }
+
