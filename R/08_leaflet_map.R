@@ -21,9 +21,20 @@ build_leaflet_map <- function(polygons_clustered,
                               title            = "Cluster") {
 
   clust_vals <- polygons_clustered[[cluster_col]]
+  unique_vals <- unique(clust_vals[!is.na(clust_vals)])
+  num_clusters <- length(unique_vals)
+
+  # Logic to handle custom hex vector OR viridis string
+  if (length(palette_option) > 1) {
+    # Use custom hex vector, trimmed to the number of clusters needed
+    final_palette <- palette_option[1:num_clusters]
+  } else {
+    # Use standard viridis options (turbo, viridis, magma, etc.)
+    final_palette <- viridis(num_clusters, option = palette_option)
+  }
+
   pal <- colorFactor(
-    palette = viridis(length(unique(clust_vals[!is.na(clust_vals)])),
-                      option = palette_option),
+    palette = final_palette,
     domain = clust_vals
   )
 
@@ -38,17 +49,14 @@ build_leaflet_map <- function(polygons_clustered,
     label_fn(polygons_clustered[i, ])
   })
 
-  # leaflet uses R's ~ formula interface, not dplyr's .data pronoun.
-  # Build formulas dynamically from the column name string.
   fill_formula   <- as.formula(paste0("~ pal(", cluster_col, ")"))
   values_formula <- as.formula(paste0("~ ", cluster_col))
 
-  # Compute bounding box in WGS84 so fitBounds() always works
   bbox <- sf::st_bbox(sf::st_transform(polygons_clustered, 4326))
 
   m <- leaflet(polygons_clustered) |>
     addTiles() |>
-    fitBounds(                        # zoom to data on load
+    fitBounds(
       lng1 = bbox[["xmin"]], lat1 = bbox[["ymin"]],
       lng2 = bbox[["xmax"]], lat2 = bbox[["ymax"]]
     ) |>
@@ -73,4 +81,3 @@ build_leaflet_map <- function(polygons_clustered,
 
   return(m)
 }
-
