@@ -22,23 +22,21 @@ build_leaflet_map <- function(polygons_clustered,
 
   clust_vals <- polygons_clustered[[cluster_col]]
   unique_vals <- unique(clust_vals[!is.na(clust_vals)])
-  num_clusters <- length(unique_vals)
+  n_clust <- length(unique_vals)
 
-  # Logic to handle custom hex vector OR viridis string
+  # FIX: Check if palette_option is a custom vector OR a viridis string
   if (length(palette_option) > 1) {
-    # Use custom hex vector, trimmed to the number of clusters needed
-    final_palette <- palette_option[1:num_clusters]
+    # Use your custom hex codes
+    # We use colorRampPalette to ensure we have exactly enough colours
+    final_cols <- colorRampPalette(palette_option)(n_clust)
   } else {
-    # Use standard viridis options (turbo, viridis, magma, etc.)
-    final_palette <- viridis(num_clusters, option = palette_option)
+    # Use standard viridis strings (e.g., "turbo", "magma")
+    final_cols <- viridis::viridis(n_clust, option = palette_option)
   }
 
-  pal <- colorFactor(
-    palette = final_palette,
-    domain = clust_vals
-  )
+  pal <- colorFactor(palette = final_cols, domain = clust_vals)
 
-  # Default label
+  # Default label logic
   if (is.null(label_fn)) {
     label_fn <- function(df) {
       htmltools::HTML(paste0("<b>Cluster: </b>", df[[cluster_col]]))
@@ -51,7 +49,6 @@ build_leaflet_map <- function(polygons_clustered,
 
   fill_formula   <- as.formula(paste0("~ pal(", cluster_col, ")"))
   values_formula <- as.formula(paste0("~ ", cluster_col))
-
   bbox <- sf::st_bbox(sf::st_transform(polygons_clustered, 4326))
 
   m <- leaflet(polygons_clustered) |>
