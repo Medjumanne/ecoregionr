@@ -15,14 +15,15 @@
 #' @export
 make_cluster_heatmap <- function(data,
                                  group_name,
-                                 group_col      = "ADM0_NAME",
-                                 exclude_cols   = c("ID", "k_used", "Shape_Leng",
-                                                    "Shape_Area", "FID_1"),
-                                 cat_threshold  = 0.01) {
+                                 group_col = "ADM0_NAME",
+                                 cluster_col = "cluster",     # ← NEW PARAMETER
+                                 exclude_cols = c("ID", "k_used", "Shape_Leng",
+                                                  "Shape_Area", "FID_1"),
+                                 cat_threshold = 0.01) {
 
   heatmap_data <- data |>
     filter(.data[[group_col]] == group_name) |>
-    group_by(cluster) |>
+    group_by(.data[[cluster_col]]) |>                    # ← Updated
     summarise(across(where(is.numeric), \(x) mean(x, na.rm = TRUE)),
               .groups = "drop") |>
     select(-any_of(exclude_cols)) |>
@@ -30,25 +31,24 @@ make_cluster_heatmap <- function(data,
 
   # Drop near-zero columns (uninformative categories)
   heatmap_data <- heatmap_data |>
-    select(cluster, where(~ !is.numeric(.x) || max(abs(.x), na.rm = TRUE) > cat_threshold))
+    select(.data[[cluster_col]], where(~ !is.numeric(.x) || max(abs(.x), na.rm = TRUE) > cat_threshold))
 
   heatmap_scaled <- heatmap_data |>
-    mutate(across(-cluster, \(x) as.vector(scale(x)))) |>
-    pivot_longer(-cluster, names_to = "Variable", values_to = "Z_score") |>
+    mutate(across(-all_of(cluster_col), \(x) as.vector(scale(x)))) |>   # ← Updated
+    pivot_longer(-all_of(cluster_col), names_to = "Variable", values_to = "Z_score") |>
     filter(!is.na(Z_score))
 
-  ggplot(heatmap_scaled, aes(x = cluster, y = Variable, fill = Z_score)) +
+  ggplot(heatmap_scaled, aes(x = .data[[cluster_col]], y = Variable, fill = Z_score)) +
     geom_tile(color = "white", linewidth = 0.2) +
     scale_fill_gradientn(
       colors = c("blue", "white", "red"),
-      name   = "Z-score"
+      name = "Z-score"
     ) +
-    labs(title    = paste("Cluster Characterisation:", group_name),
+    labs(title = paste("Cluster Characterisation:", group_name),
          subtitle = "Red = above-average; blue = below-average",
-         x        = "Cluster",
-         y        = "Variable") +
+         x = "Bioregion / Cluster",
+         y = "Variable") +
     theme_test() +
-    theme(axis.text.y     = element_text(size = 8),
+    theme(axis.text.y = element_text(size = 8),
           legend.position = "right")
 }
-
