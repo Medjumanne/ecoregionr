@@ -8,6 +8,8 @@ make_cluster_heatmap(
   data,
   group_name,
   group_col = "ADM0_NAME",
+  cluster_col = "cluster",
+  facet_by = NULL,
   exclude_cols = c("ID", "k_used", "Shape_Leng", "Shape_Area", "FID_1"),
   cat_threshold = 0.01
 )

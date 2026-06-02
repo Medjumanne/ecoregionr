@@ -2,24 +2,36 @@
 % Please edit documentation in R/03_build_table.R
 \name{build_cluster_table}
 \alias{build_cluster_table}
-\title{Join polygon attributes with categorical composition tables.}
+\title{Join polygon attributes with categorical composition tables,
+and optionally with a pre-loaded CSV data frame.}
 \usage{
-build_cluster_table(polygons, cat_tables = list(), keep_cols, id_col = "ID")
+build_cluster_table(
+  polygons,
+  cat_tables = list(),
+  keep_cols,
+  id_col = "ID",
+  csv_data = NULL
+)
 }
 \arguments{
-\item{polygons}{sf object already enriched with continuous stats
-(output of extract_continuous_stats).}
+\item{polygons}{sf object already enriched with continuous stats.}
 
 \item{cat_tables}{List of wide tibbles from extract_categorical_composition.}
 
-\item{keep_cols}{Character vector of columns from `polygons` to retain.
-Geometry is always dropped.}
+\item{keep_cols}{Character vector of columns from `polygons` to retain.}
 
 \item{id_col}{Join key.}
+
+\item{csv_data}{Optional data frame to join by `id_col`.
+Must contain a column whose name matches `id_col` plus
+any additional numeric covariates you want included in
+clustering.  All non-ID numeric columns are retained.
+Pass \code{NULL} (default) to skip.}
 }
 \value{
 A plain tibble ready for clustering.
 }
 \description{
-Join polygon attributes with categorical composition tables.
+Join polygon attributes with categorical composition tables,
+and optionally with a pre-loaded CSV data frame.
 }

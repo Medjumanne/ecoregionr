@@ -8,10 +8,12 @@ cluster_pca_kmeans(
   df,
   group_col = NULL,
   id_col = "ID",
-  min_k = 6,
-  max_k = 15,
+  min_k = 2,
+  max_k = 5,
   pca_var = 0.9,
   nstart = 50,
+  weights = NULL,
+  strict_mode = FALSE,
   visualize = TRUE,
   seed = 1
 )
@@ -24,8 +26,7 @@ Used for status messages and excluded from clustering.}
 
 \item{id_col}{Name of the unique ID column (excluded from clustering).}
 
-\item{min_k}{Minimum number of clusters to allow (default 6, matching
-the original NbClust min.nc = 6).}
+\item{min_k}{Minimum number of clusters to allow (default 6).}
 
 \item{max_k}{Maximum number of clusters to test (default 15).}
 
@@ -33,18 +34,17 @@ the original NbClust min.nc = 6).}
 
 \item{nstart}{k-means nstart for the final run (default 50).}
 
-\item{visualize}{Logical – print consensus dot-plot, scree, PCA, and
-silhouette plots (default TRUE).}
+\item{weights}{Named vector of variable weights for PCA (e.g. c("elev_median" = 3)).}
 
-\item{seed}{Random seed (default 1).}
+\item{strict_mode}{Force strict parameter settings.}
+
+\item{visualize}{Print diagnostic plots.}
+
+\item{seed}{Random seed.}
 }
 \value{
-The input data frame with extra columns: `cluster` (factor),
-        `k_used` (integer), and PC score columns (PC1, PC2, …).
+Data frame with `cluster`, `k_used`, and PC score columns.
 }
 \description{
-Logic is a direct generic port of the original cluster_country_pca_kmeans().
-Only the hardcoded column names ("ID", country column) are replaced by
-parameters; everything else — NbClust call, vote counting, min/max k
-enforcement, silhouette fallback, visualisations — is identical.
+PCA + k-means clustering for one group (e.g. one country).
 }

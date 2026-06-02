@@ -1,0 +1,775 @@
+---
+title: "Bioregion Delineation with ecoregionr: Unconstrained vs. Spatially Constrained Clustering"
+author: "Mohamed Jumanne Omari"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    highlight: kate
+    code_folding: show
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = TRUE,
+  warning = FALSE,
+  fig.width  = 10,
+  fig.height = 7,
+  dpi        = 150
+)
+```
+
+---
+
+# Introduction
+
+## What is bioregionalization?
+
+Bioregionalization — or ecological regionalization — is the process of dividing
+a geographic area into zones that share similar environmental conditions. Rather
+than using administrative boundaries (which are political artefacts), bioregions
+are defined by measurable ecological signals: climate, elevation, vegetation
+cover, soil moisture, species composition, and so on.
+
+## Two strategies implemented in this package
+
+The `ecoregionr` package provides **two complementary clustering strategies**,
+each answering a slightly different question:
+
+| Strategy | Core idea | Best for |
+|---|---|---|
+| **PCA + k-means** (unconstrained) | Group units that are *environmentally* most similar, ignoring geography | Maximising within-cluster homogeneity; hypothesis generation |
+| **SKATER** (spatially constrained) | Group units that are environmentally similar *and* geographically connected | Operationally deployable contiguous regions; planning & logistics |
+
+Neither is universally superior. Unconstrained clustering can reveal
+environmentally coherent groups scattered across the map — useful for
+understanding the environmental space. Spatially constrained clustering
+sacrifices a little environmental purity to guarantee contiguous, navigable
+zones — useful when field teams need to operate within a single continuous region.
+
+This document walks through both methods on the same dataset, compares the
+outputs, and explains when to prefer each approach.
+
+---
+
+# Setup and Configuration
+
+## Install and load the package
+
+```{r load-package, eval=FALSE}
+# Install from GitHub (once)
+# devtools::install_github("Medjumanne/ecoregionr")
+
+# Load
+library(ecoregionr)
+```
+
+```{r load-package-local, echo=FALSE}
+# For local development — adjust path as needed
+# devtools::load_all("~/Documents/ecoregionr")
+library(ecoregionr)
+```
+
+## Required additional packages
+
+```{r load-packages, message=FALSE}
+packages <- c(
+  "terra", "sf", "dplyr", "tidyr", "ggplot2",
+  "rnaturalearth", "rnaturalearthdata",
+  "leaflet", "htmlwidgets",
+  "spdep",          # required for SKATER
+  "factoextra",     # PCA visualisation
+  "cluster",        # silhouette
+  "patchwork",      # combine plots
+  "ggspatial",      # north arrow + scale bar
+  "viridis",
+  "purrr"
+)
+
+for (pkg in packages) {
+  if (!requireNamespace(pkg, quietly = TRUE))
+    install.packages(pkg, dependencies = TRUE)
+  suppressPackageStartupMessages(library(pkg, character.only = TRUE))
+}
+```
+
+## Configuration block
+
+Adjust **only** this section between projects. Everything below reads from
+these variables, so you do not need to edit the pipeline code.
+
+```{r config}
+# ── Paths ─────────────────────────────────────────────────────────────────────
+WORKDIR   <- "~/Documents/VectorGrid/WP1_baselinbe_biogeographic_maps"
+OUTDIR    <- file.path(WORKDIR, "output_TZ")
+SHAPEFILE <- file.path(WORKDIR, "shepefiles_TZ/New Districtss.shp")
+
+# ── Column names in the shapefile ─────────────────────────────────────────────
+ID_COL   <- "ID"          # unique row identifier (created if absent)
+UNIT_COL <- "NewDist18"   # human-readable polygon label (district name)
+
+# ── Single-country mode ───────────────────────────────────────────────────────
+# Set GROUP_COL = "ADM0_NAME" and COUNTRY_NAME = NULL for multi-country runs.
+GROUP_COL    <- NULL
+COUNTRY_NAME <- "United Republic of Tanzania"
+STUDY_GROUPS <- NULL
+
+# ── Continuous rasters ────────────────────────────────────────────────────────
+CONTINUOUS_RASTERS <- list(
+  elev         = file.path(WORKDIR, "output/elevation_vg_africa.tif"),
+  pop          = file.path(WORKDIR, "output/population_vg_africa.tif"),
+  urban        = file.path(WORKDIR, "output/urban_extent_vg_africa.tif"),
+  transport    = file.path(WORKDIR, "output/transport_density_km_per_km2.tif"),
+  mosquitoRich = file.path(WORKDIR, "output/mosquito_species_richness_smoothed_per_all_area.tif"),
+  gambiae      = file.path(WORKDIR, "shepefiles_TZ/Mosq_abu/gambiae_clipped.tif"),
+  funestus     = file.path(WORKDIR, "shepefiles_TZ/Mosq_abu/funestus_clipped.tif"),
+  arabiensis   = file.path(WORKDIR, "shepefiles_TZ/Mosq_abu/arabiensis_clipped.tif")
+)
+
+CONTINUOUS_FUNS <- list(
+  elev         = list(median = median),
+  pop          = list(mean   = mean),
+  urban        = list(mean   = mean),
+  transport    = list(mean   = mean),
+  mosquitoRich = list(max    = max),
+  gambiae      = list(mean   = mean),
+  funestus     = list(mean   = mean),
+  arabiensis   = list(mean   = mean)
+)
+
+AGG_FACTS <- list(elev = 1, pop = 1, urban = 10, transport = 1, mosquitoRich = 1)
+
+# ── Categorical rasters ────────────────────────────────────────────────────────
+CATEGORICAL_RASTERS <- list(
+  kg        = file.path(WORKDIR, "output/climate_vg_africa.tif"),
+  landcover = file.path(WORKDIR, "output/lc_study_area_final.tif")
+)
+
+KG_LOOKUP       <- ecoregionr:::kg_lookup
+LC_LOOKUP       <- ecoregionr:::lc_lookup
+LC_EXCLUDE_VALS <- c(10, 4294967295, 4294967296)
+LC_CLASS_NAMES  <- unname(LC_LOOKUP)
+
+# ── Numeric variable detection ─────────────────────────────────────────────────
+# NULL = auto-detect columns ending in _mean, _median, _max, _coverage, _rate
+NUMERIC_VARS <- NULL
+
+# ── Shared clustering parameters ──────────────────────────────────────────────
+SEED <- 42
+```
+
+---
+
+# Data Preparation (shared by both methods)
+
+The steps in this section are identical for both clustering strategies.
+We load the polygon layer, extract raster statistics, build a covariate table,
+and impute missing values. The resulting `env_df` data frame feeds into both
+methods.
+
+## Step 1 — Load and validate polygons
+
+```{r load-polygons}
+adm2 <- sf::st_read(SHAPEFILE, quiet = TRUE)
+
+# Add a sequential ID column if absent
+if (!ID_COL %in% names(adm2)) adm2[[ID_COL]] <- seq_len(nrow(adm2))
+
+# Single-country mode: inject a synthetic .group column
+if (is.null(GROUP_COL)) {
+  GROUP_COL         <- ".group"
+  adm2[[GROUP_COL]] <- COUNTRY_NAME
+}
+
+if (!is.null(STUDY_GROUPS))
+  adm2 <- adm2[adm2[[GROUP_COL]] %in% STUDY_GROUPS, ]
+
+METADATA_COLS <- GROUP_COL
+adm2 <- sf::st_make_valid(adm2)
+
+cat("Polygons loaded:", nrow(adm2), "\n")
+```
+
+## Step 2 — Load rasters and reproject polygons
+
+```{r load-rasters}
+cont_rasters <- lapply(CONTINUOUS_RASTERS, terra::rast)
+cat_rasters  <- lapply(CATEGORICAL_RASTERS, terra::rast)
+
+ref_crs <- terra::crs(cont_rasters[[1]])
+adm2    <- sf::st_transform(adm2, crs = ref_crs)
+```
+
+## Step 3 — Extract continuous raster statistics
+
+For each polygon we summarise every raster with its designated function
+(median for elevation, mean for population, max for mosquito richness, etc.).
+
+```{r extract-continuous}
+adm2_stats <- extract_continuous_stats(
+  polygons       = adm2,
+  rasters        = cont_rasters,
+  funs           = CONTINUOUS_FUNS,
+  id_col         = ID_COL,
+  aggregate_fact = AGG_FACTS
+)
+
+# Round mosquito richness to integers (it is a species count)
+adm2_stats$mosquitoRich_max <- round(adm2_stats$mosquitoRich_max)
+```
+
+## Step 4 — Protected area coverage (optional covariate)
+
+We calculate the proportion of each district that falls within a protected area.
+This variable captures a conservation dimension that influences both vector
+habitat and human access to services.
+
+```{r protected-areas, eval=FALSE}
+# Load and merge WDPA layers (adjust paths as needed)
+protected_combined <- dplyr::bind_rows(
+  sf::st_read("./shepefiles_TZ/...shp_0/...-polygons.shp", quiet = TRUE),
+  sf::st_read("./shepefiles_TZ/...shp_1/...-polygons.shp", quiet = TRUE),
+  sf::st_read("./shepefiles_TZ/...shp_2/...-polygons.shp", quiet = TRUE)
+) %>%
+  sf::st_transform(crs = ref_crs) %>%
+  sf::st_make_valid()
+
+protected_dissolved <- sf::st_union(protected_combined) %>% sf::st_make_valid()
+
+sf::sf_use_s2(FALSE)
+adm2_stats <- sf::st_make_valid(adm2_stats)
+
+adm2_stats <- adm2_stats %>%
+  dplyr::mutate(
+    protected_area_coverage = sapply(seq_len(nrow(.)), function(i) {
+      g   <- sf::st_geometry(adm2_stats[i, ])
+      int <- suppressWarnings(sf::st_intersection(g, protected_dissolved))
+      if (length(int) == 0) return(0)
+      as.numeric(sf::st_area(int) / sf::st_area(g))
+    })
+  )
+```
+
+## Step 5 — Extract climate and land-cover compositions
+
+Each polygon is summarised as a vector of proportions across Köppen-Geiger
+climate classes and ESRI land-cover classes.
+
+```{r extract-categorical}
+kg_wide <- extract_categorical_composition(
+  polygons   = adm2,
+  cat_raster = cat_rasters$kg,
+  lookup     = KG_LOOKUP,
+  id_col     = ID_COL
+)
+
+lc_wide <- extract_categorical_composition(
+  polygons     = adm2,
+  cat_raster   = cat_rasters$landcover,
+  lookup       = LC_LOOKUP,
+  exclude_vals = LC_EXCLUDE_VALS,
+  id_col       = ID_COL
+)
+```
+
+## Step 6 — Build the covariate table
+
+We join continuous stats and categorical compositions into a single wide table
+that serves as the input to both clustering methods.
+
+```{r build-table}
+# Auto-detect numeric variable names
+if (is.null(NUMERIC_VARS)) {
+  all_cols     <- names(sf::st_drop_geometry(adm2_stats))
+  NUMERIC_VARS <- grep("_mean$|_median$|_max$|_coverage$|_rate$", all_cols, value = TRUE)
+  message("Auto-detected NUMERIC_VARS: ", paste(NUMERIC_VARS, collapse = ", "))
+}
+
+env_df <- build_cluster_table(
+  polygons   = adm2_stats,
+  cat_tables = list(kg_wide, lc_wide),
+  keep_cols  = c(METADATA_COLS, NUMERIC_VARS),
+  id_col     = ID_COL
+)
+
+# Fill NA proportions with 0 (class absent from polygon)
+cat_prop_cols <- setdiff(names(env_df), c(ID_COL, METADATA_COLS, NUMERIC_VARS))
+env_df <- env_df %>%
+  dplyr::mutate(dplyr::across(dplyr::all_of(cat_prop_cols),
+                               ~ tidyr::replace_na(.x, 0)))
+
+glimpse(env_df)
+```
+
+## Step 7 — Median imputation (within-group)
+
+Missing values in continuous covariates are replaced with the within-group
+(within-country) median. Imputing per-group rather than globally ensures that
+each country's feature matrix is self-consistent regardless of which other
+countries are included in the run.
+
+```{r impute}
+env_df <- env_df %>%
+  dplyr::group_by(.data[[GROUP_COL]]) %>%
+  dplyr::mutate(dplyr::across(
+    dplyr::all_of(NUMERIC_VARS),
+    ~ ifelse(is.na(.x), median(.x, na.rm = TRUE), .x)
+  )) %>%
+  dplyr::ungroup()
+
+# Variables used in both clustering methods
+vars_for_clustering <- c(
+  NUMERIC_VARS,
+  setdiff(names(kg_wide), ID_COL),
+  setdiff(names(lc_wide), ID_COL)
+)
+
+# Attach env_df back to the sf object for SKATER
+adm2_sf <- adm2_stats %>%
+  dplyr::left_join(env_df, by = ID_COL) %>%
+  sf::st_as_sf()
+```
+
+---
+
+# Method 1 — Unconstrained Clustering: PCA + k-means
+
+## Conceptual background
+
+PCA (Principal Component Analysis) reduces the high-dimensional covariate
+space to a smaller set of orthogonal axes that capture the dominant gradients
+of environmental variation. The first few PCs typically represent interpretable
+gradients: PC1 might be an "aridity axis", PC2 an "elevation axis", and so on.
+
+K-means clustering then partitions the PC space into *k* clusters by minimising
+the total within-cluster sum of squares. The optimal *k* is selected via
+consensus voting across multiple NbClust indices.
+
+**Key property**: there is no spatial constraint — two districts on opposite
+sides of the country can be assigned to the same cluster if they share similar
+environmental conditions. This is the method's strength for scientific insight
+but its limitation for operational planning.
+
+## Elevation banding (optional constraint)
+
+We optionally stratify the clustering by elevation band before running k-means.
+This is a *soft* constraint: we split the data into lowland / midland / highland
+strata and cluster within each stratum separately. The motivation is ecological:
+the environmental drivers of malaria transmission differ fundamentally between
+a coastal lowland and a highland forest, so pooling them in a single PCA can
+obscure within-stratum structure.
+
+```{r kmeans-elev-band}
+env_df <- env_df %>%
+  dplyr::mutate(
+    elev_band = dplyr::case_when(
+      elev_median < 300  ~ "lowland",
+      elev_median < 900  ~ "midland",
+      TRUE               ~ "highland"
+    ),
+    elev_band = factor(elev_band, levels = c("lowland", "midland", "highland"),
+                       ordered = TRUE)
+  )
+
+table(env_df$elev_band)
+```
+
+## Run PCA + k-means clustering
+
+```{r run-kmeans, message=TRUE}
+MIN_K  <- 6
+MAX_K  <- 15
+PCA_VAR <- 0.90
+NSTART  <- 50
+
+clusters_km <- run_clustering(
+  df              = env_df,
+  weights         = NULL,
+  constraint_var  = "elev_band",
+  constraint_mode = "split",
+  group_col       = GROUP_COL,
+  id_col          = ID_COL,
+  min_k           = MIN_K,
+  max_k           = MAX_K,
+  pca_var         = PCA_VAR,
+  nstart          = NSTART,
+  visualize       = TRUE,
+  seed            = SEED
+)
+
+# Summary: how many clusters per stratum?
+clusters_km %>%
+  dplyr::group_by(.data[[GROUP_COL]]) %>%
+  dplyr::summarise(n_units = dplyr::n(), k = dplyr::first(k_used), .groups = "drop")
+```
+
+## Cluster heatmap
+
+The heatmap shows the mean z-score of each covariate within each cluster.
+Variables with high positive z-scores (red) are the defining characteristics
+of that cluster; those near zero (white) are unremarkable.
+
+```{r kmeans-heatmap}
+study_groups <- unique(clusters_km[[GROUP_COL]])
+
+for (g in study_groups) {
+  p <- make_cluster_heatmap(clusters_km, group_name = g, group_col = GROUP_COL)
+  print(p)
+}
+```
+
+## Join clusters to polygons and map
+
+```{r kmeans-map}
+kg_cols <- setdiff(names(kg_wide), ID_COL)
+lc_cols <- setdiff(names(lc_wide), ID_COL)
+
+env_summary_km <- env_df %>%
+  dplyr::group_by(.data[[ID_COL]]) %>%
+  dplyr::summarise(
+    dplyr::across(dplyr::any_of(c(kg_cols, lc_cols)), ~ mean(.x, na.rm = TRUE)),
+    .groups = "drop"
+  )
+
+adm2_km <- adm2_stats %>%
+  dplyr::left_join(dplyr::select(clusters_km, dplyr::all_of(ID_COL), cluster), by = ID_COL) %>%
+  dplyr::left_join(env_summary_km, by = ID_COL) %>%
+  dplyr::filter(!is.na(cluster))
+
+# Helper for popup text
+wrap_popup <- function(vals, nms) {
+  keep <- !is.na(vals) & vals > 0
+  if (!any(keep)) return("None")
+  vals <- vals[keep]; nms <- nms[keep]
+  ord  <- order(vals, decreasing = TRUE)
+  paste(paste0(nms[ord], ": ", round(vals[ord], 4)), collapse = "<br/>")
+}
+
+adm2_km <- adm2_km %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(
+    kg_popup = wrap_popup(dplyr::c_across(dplyr::all_of(kg_cols)), kg_cols),
+    lc_popup = wrap_popup(dplyr::c_across(dplyr::all_of(lc_cols)), lc_cols)
+  ) %>%
+  dplyr::ungroup()
+
+# Static map
+countries_sf <- rnaturalearth::ne_countries(
+  country = if (!is.null(STUDY_GROUPS)) STUDY_GROUPS else COUNTRY_NAME,
+  returnclass = "sf"
+)
+
+map_km <- make_static_map(
+  polygons_clustered = adm2_km,
+  cluster_col        = "cluster",
+  border_sf          = countries_sf,
+  projection         = "+proj=moll",
+  viridis_option     = "turbo",
+  legend_title       = "Bioregion (k-means)",
+  simplify           = TRUE,
+  keep_prop          = 0.02
+)
+print(map_km)
+```
+
+---
+
+# Method 2 — Spatially Constrained Clustering: SKATER
+
+## Conceptual background
+
+SKATER (Spatial 'K'luster Analysis by Tree Edge Removal) is an algorithm
+proposed by Assunção *et al.* (2006) that enforces spatial contiguity as a
+hard constraint: every cluster must form a geographically connected region.
+
+The algorithm works in three stages:
+
+1. **Spatial graph construction.** We define neighbours using a distance
+   threshold (e.g. centroids within 45 km are neighbours). Isolated polygons
+   (islands) are connected to their nearest mainland polygon.
+
+2. **Minimum Spanning Tree (MST).** Edge weights in the adjacency graph are
+   set to the Euclidean distance between polygons in PCA-score space. The MST
+   is the spanning tree with the minimum total edge weight — it traces the
+   most "environmentally similar" path through the adjacency graph.
+
+3. **Tree pruning.** Removing the *k−1* edges with the highest cost
+   (= greatest environmental dissimilarity) partitions the MST into *k*
+   subtrees, each representing one bioregion.
+
+**Key property**: Because the MST is built on the *spatial adjacency graph*,
+every subtree (cluster) is by construction a connected region. The trade-off
+is that two environmentally identical but geographically distant districts
+cannot be merged — they must be in different clusters.
+
+## Selecting k with the elbow method
+
+Before running SKATER we use an elbow plot to guide the choice of *k*. The
+within-cluster SSE is computed in PC-score space for k = 1 … 20. We look for
+the "elbow" — the point where SSE reduction per additional cluster starts to
+flatten.
+
+```{r skater-elbow, message=TRUE}
+elbow_plot <- plot_skater_elbow(
+  polygons_sf    = adm2_sf,
+  vars           = vars_for_clustering,
+  max_k          = 20,
+  pca_var        = 0.95,
+  elev_col       = "elev_median",
+  elev_weight    = 7,
+  dist_threshold = 45000
+)
+```
+
+Based on the elbow above, choose the number of clusters:
+
+```{r skater-nclust}
+N_CLUSTERS_SKATER <- 15   # <-- adjust based on the elbow plot
+```
+
+## Run SKATER clustering
+
+```{r run-skater, message=TRUE}
+adm2_sf <- run_skater_clustering(
+  polygons_sf    = adm2_sf,
+  vars           = vars_for_clustering,
+  n_clusters     = N_CLUSTERS_SKATER,
+  pca_var        = 0.95,
+  elev_col       = "elev_median",   # boost elevation influence
+  elev_weight    = 7,
+  dist_threshold = 45000,
+  k_fallback     = 1,
+  seed           = SEED,
+  cluster_col    = "skater_cluster"
+)
+
+# Quick tabulation
+table(adm2_sf$skater_cluster)
+```
+
+## PCA loading plot
+
+This plot shows how the original covariates relate to PC1 and PC2 — the axes
+used to weight the MST edges. Variables with long arrows in the direction of
+PC1 are the primary drivers of the first environmental gradient.
+
+```{r skater-pca-loadings}
+plot_skater_pca_loadings(adm2_sf)
+```
+
+## Cluster heatmap
+
+```{r skater-heatmap}
+make_skater_heatmap(
+  adm2_sf,
+  cluster_col = "skater_cluster",
+  title       = "Bioregion Characteristics (SKATER)",
+  subtitle    = "Values are z-scores relative to the study-area mean"
+)
+```
+
+## Static map
+
+```{r skater-static-map}
+# Custom palette for up to 16 clusters
+ecoregion_cols <- c(
+  "cyan", "#3CB44B", "#FFE119", "#4363D8", "#F58231",
+  "#911EB4", "#42D4F4", "#F032E6", "#BFEF45", "#FABEBE",
+  "#469990", "#E6BEFF", "#9A6324", "#800000", "#FFFAC8", "grey28"
+)
+
+map_skater <- ggplot2::ggplot(adm2_sf) +
+  ggplot2::geom_sf(ggplot2::aes(fill = skater_cluster), colour = "white", linewidth = 0.05) +
+  ggplot2::scale_fill_manual(values = ecoregion_cols, name = "Ecoregion") +
+  ggspatial::annotation_scale(location = "bl", width_hint = 0.4, style = "ticks") +
+  ggspatial::annotation_north_arrow(
+    location = "bl", which_north = "true",
+    pad_x = ggplot2::unit(0.2, "in"), pad_y = ggplot2::unit(0.4, "in"),
+    style = ggspatial::north_arrow_fancy_orienteering()
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    panel.grid   = ggplot2::element_blank(),
+    axis.text    = ggplot2::element_blank(),
+    axis.ticks   = ggplot2::element_blank()
+  ) +
+  ggplot2::labs(
+    title    = "Spatially Constrained Bioregions (SKATER)",
+    subtitle = paste(N_CLUSTERS_SKATER, "contiguous clusters"),
+    caption  = "Method: SKATER via spdep"
+  )
+
+print(map_skater)
+```
+
+## Interactive Leaflet map
+
+```{r skater-leaflet, eval=FALSE}
+# Build popup strings for climate and land cover
+climate_cols  <- intersect(names(adm2_sf), unname(KG_LOOKUP))
+landcover_cols <- intersect(names(adm2_sf), unname(LC_LOOKUP))
+
+safe_popup_cols <- function(sf_obj, col_names) {
+  sf_obj %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(popup_text = paste(
+      Filter(Negate(is.null), lapply(col_names, function(x) {
+        val <- dplyr::cur_data()[[x]]
+        if (!is.na(val) && val > 0) paste0(x, ": ", sprintf("%.3f", val))
+      })),
+      collapse = "<br/>"
+    )) %>%
+    dplyr::ungroup()
+}
+
+adm2_sf <- safe_popup_cols(adm2_sf, climate_cols)
+
+label_fn_skater <- function(row) {
+  htmltools::HTML(paste0(
+    "<strong>", row[[UNIT_COL]], " (Cluster ", row$skater_cluster, ")</strong><br/>",
+    "<hr style='margin:4px 0;'>",
+    "<strong>Elevation:</strong> ", round(row$elev_median, 1), " m<br/>",
+    "<strong>Population:</strong> ", round(row$pop_mean, 1), " /km²<br/>",
+    "<strong>Mosquito Richness:</strong> ", row$mosquitoRich_max, "<br/>",
+    "<strong>Urban:</strong> ", sprintf("%.3f", row$urban_mean), "<br/>",
+    "<strong>Transport:</strong> ", sprintf("%.3f", row$transport_mean), "<br/>"
+  ))
+}
+
+intr_map_skater <- build_leaflet_map(
+  polygons_clustered = adm2_sf,
+  cluster_col        = "skater_cluster",
+  label_fn           = label_fn_skater,
+  border_sf          = countries_sf,
+  palette_option     = ecoregion_cols,
+  title              = "Bioregions (SKATER)"
+)
+
+intr_map_skater
+```
+
+---
+
+# Method Comparison
+
+## Side-by-side static maps
+
+```{r compare-maps, fig.width=14, fig.height=6}
+library(patchwork)
+
+p_km <- map_km +
+  ggplot2::labs(title = "A   PCA + k-means (unconstrained)",
+                subtitle = "Maximises within-cluster homogeneity")
+
+p_sk <- map_skater +
+  ggplot2::labs(title = "B   SKATER (spatially constrained)",
+                subtitle = "Guarantees contiguous bioregions")
+
+p_km | p_sk
+```
+
+## When to use which method
+
+```{r comparison-table, echo=FALSE}
+comparison <- data.frame(
+  Criterion = c(
+    "Spatial contiguity of clusters",
+    "Within-cluster environmental purity",
+    "Sensitivity to isolated polygons",
+    "Interpretability for field teams",
+    "Computational cost",
+    "Best for"
+  ),
+  `PCA + k-means` = c(
+    "Not guaranteed",
+    "Maximised",
+    "Not applicable",
+    "Moderate (clusters may be fragmented)",
+    "Low",
+    "Environmental hypothesis generation; multi-country comparisons"
+  ),
+  SKATER = c(
+    "Guaranteed",
+    "Slightly lower (contiguity costs some purity)",
+    "Requires graph connectivity fixes (handled automatically)",
+    "High (regions are navigable zones)",
+    "Moderate (MST computation)",
+    "Operational planning; surveillance zone design; logistics"
+  ),
+  check.names = FALSE
+)
+
+knitr::kable(comparison, align = "lll",
+             caption = "Comparison of the two clustering strategies.")
+```
+
+---
+
+# Saving Outputs
+
+```{r save-outputs, eval=FALSE}
+ensure_dir(OUTDIR)
+
+# ── SKATER outputs ─────────────────────────────────────────────────────────────
+ggsave(file.path(OUTDIR, "skater_map_static.png"),
+       map_skater, width = 12, height = 10, dpi = 300)
+
+ggsave(file.path(OUTDIR, "skater_elbow.png"),
+       elbow_plot, width = 10, height = 7, dpi = 300)
+
+htmlwidgets::saveWidget(
+  intr_map_skater,
+  file.path(OUTDIR, "skater_map_interactive.html"),
+  selfcontained = FALSE
+)
+
+write.csv(
+  sf::st_drop_geometry(adm2_sf[, c(UNIT_COL, "skater_cluster")]),
+  file.path(OUTDIR, "skater_cluster_assignments.csv"),
+  row.names = FALSE
+)
+
+# ── k-means outputs ────────────────────────────────────────────────────────────
+ggsave(file.path(OUTDIR, "kmeans_map_static.png"),
+       map_km, width = 12, height = 10, dpi = 300)
+
+write.csv(
+  sf::st_drop_geometry(adm2_km[, c(UNIT_COL, "cluster")]),
+  file.path(OUTDIR, "kmeans_cluster_assignments.csv"),
+  row.names = FALSE
+)
+
+message("All outputs saved to: ", OUTDIR)
+```
+
+---
+
+# Session Information
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+# References
+
+- Assunção, R. M., Neves, M. C., Câmara, G., & Freitas, C. D. C. (2006).
+  Efficient regionalisation techniques for socio-economic geographical units using
+  minimum spanning trees. *International Journal of Geographical Information
+  Science*, 20(7), 797–811. <https://doi.org/10.1080/13658810600665111>
+
+- Bivand, R. S., Pebesma, E., & Gómez-Rubio, V. (2013). *Applied Spatial Data
+  Analysis with R* (2nd ed.). Springer. <https://asdar-book.org>
+
+- Beck, H. E., Zimmermann, N. E., McVicar, T. R., Vergopolan, N., Berg, A., &
+  Wood, E. F. (2018). Present and future Köppen-Geiger climate classification
+  maps at 1-km resolution. *Scientific Data*, 5, 180214.
+
+- Karra, K., et al. (2021). Global land use/land cover with Sentinel-2 and deep
+  learning. *IGARSS 2021*. (ESRI 10m land cover product.)

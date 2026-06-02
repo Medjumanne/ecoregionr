@@ -1,21 +1,33 @@
 Package: ecoregionr
-Title: Environmental Bioregionalization and Clustering Toolkit
-Version: 0.2.0
-Authors@R: 
-    person("Mohamed Jumanne", "Omari", 
-           email = "momari@ihi.or.tz", 
-           role = c("aut", "cre"),
+Title: Environmental Bioregionalization and Clustering Toolkit for Africa
+Version: 0.3.0
+Authors@R:
+    person("Mohamed Jumanne", "Omari",
+           email = "momari@ihi.or.tz",
+           role  = c("aut", "cre"),
            comment = c(ORCID = "YOUR-ORCID-HERE"))
-Description: Tools for data-driven environmental bioregionalization and 
-    ecological clustering of administrative units using raster covariates 
-    (climate, elevation, land cover, population, etc.), PCA + consensus 
-    k-means, interactive maps, and natural language descriptions.
+Description: A comprehensive toolkit for data-driven environmental
+    bioregionalization of administrative units using multi-source raster
+    covariates (climate, elevation, land cover, population, species
+    richness, etc.).  The package implements two complementary clustering
+    strategies: (1) Unconstrained PCA + consensus k-means — maximises
+    within-cluster environmental homogeneity without spatial constraints;
+    and (2) Spatially constrained SKATER clustering — guarantees that
+    every bioregion forms a geographically contiguous zone, making the
+    resulting regions operationally deployable as administrative units.
+    Supporting utilities cover raster extraction, categorical composition
+    summarisation, median imputation, interactive Leaflet maps, static
+    publication-quality ggplot maps, cluster heatmaps, and auto-generated
+    natural-language bioregion descriptions.  The package was developed
+    for the Vector Grid Africa programme but is fully generic and can be
+    applied to any country or region.
 License: MIT + file LICENSE
+URL: https://github.com/Medjumanne/ecoregionr
+BugReports: https://github.com/Medjumanne/ecoregionr/issues
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.3.3
 Depends: R (>= 4.2)
-Imports: 
+Imports:
     sf (>= 1.0),
     terra (>= 1.7),
     dplyr (>= 1.1),
@@ -33,7 +45,13 @@ Imports:
     RColorBrewer,
     rmapshaper,
     rnaturalearth,
-    rnaturalearthdata
+    rnaturalearthdata,
+    spdep (>= 1.2)
 Suggests:
     devtools,
+    knitr,
+    rmarkdown,
+    patchwork,
     testthat (>= 3.0)
+VignetteBuilder: knitr
+Config/roxygen2/version: 8.0.0

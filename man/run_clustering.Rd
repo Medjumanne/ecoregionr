@@ -2,21 +2,30 @@
 % Please edit documentation in R/06_run_clustering.R
 \name{run_clustering}
 \alias{run_clustering}
-\title{Apply cluster_pca_kmeans() to each group in a data frame.}
+\title{Apply cluster_pca_kmeans() to each group, with optional elevation band constraint.}
 \usage{
-run_clustering(df, group_col, ...)
+run_clustering(
+  df,
+  group_col,
+  constraint_var = NULL,
+  constraint_mode = "none",
+  ...
+)
 }
 \arguments{
-\item{df}{Wide covariate table (output of build_cluster_table /
-impute_medians).}
+\item{df}{Wide covariate table.}
 
-\item{group_col}{Name of the grouping column (e.g. "ADM0_NAME").}
+\item{group_col}{Main grouping column (e.g. "ADM0_NAME").}
 
-\item{...}{Additional arguments forwarded to cluster_pca_kmeans().}
+\item{constraint_var}{Variable to constrain by (e.g. "elev_band").}
+
+\item{constraint_mode}{"none" (default) or "split".}
+
+\item{...}{Additional arguments passed to cluster_pca_kmeans().}
 }
 \value{
-A single tibble containing all rows with cluster assignments.
+Tibble with cluster assignments.
 }
 \description{
-Apply cluster_pca_kmeans() to each group in a data frame.
+Apply cluster_pca_kmeans() to each group, with optional elevation band constraint.
 }

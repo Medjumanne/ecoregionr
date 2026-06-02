@@ -4,12 +4,21 @@
 \alias{impute_medians}
 \title{Replace NA values in selected columns with column medians.}
 \usage{
-impute_medians(df, numeric_cols)
+impute_medians(df, numeric_cols, group_col = NULL)
 }
 \arguments{
 \item{df}{Data frame.}
 
 \item{numeric_cols}{Character vector of column names to impute.}
+
+\item{group_col}{Optional. Name of a grouping column (e.g. \code{"ADM0_NAME"}).
+When supplied, medians are computed \emph{within each group}
+so that one country's values never influence another country's
+imputation.  This guarantees that clustering results for a
+given country are identical regardless of which other countries
+are included in the same run.
+When \code{NULL} (default), medians are computed globally
+across all rows — the original behaviour.}
 }
 \value{
 Data frame with NAs replaced.
