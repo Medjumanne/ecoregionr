@@ -94,50 +94,80 @@ cluster_pca_kmeans <- function(df,
   df <- cbind(df, pca_data)
 
   # -----------------------------
-  # 4. NbClust
+  # 4. Guard: cap max_k by data size
   # -----------------------------
-  message(group_label, " | Running NbClust...")
+  # NbClust and kmeans need at least k+1 data points per cluster.
+  # If the stratum is small (common with elevation-band splitting), silently
+  # reduce max_k and warn — never let max_k >= nrow(pca_data).
+  safe_max_k <- min(max_k, floor(nrow(pca_data) / 2))
+  safe_min_k <- min(min_k, safe_max_k)
 
-  nb_res <- tryCatch(
-    NbClust(pca_data,
-            min.nc = min_k,
-            max.nc = max_k,
-            method = "kmeans",
-            index = "all"),
-    error = function(e) NULL
-  )
+  if (safe_max_k < max_k) {
+    message(group_label, " | Stratum has only ", nrow(pca_data),
+            " rows — reducing max_k from ", max_k, " to ", safe_max_k,
+            " and min_k from ", min_k, " to ", safe_min_k, ".")
+  }
 
-  if (!is.null(nb_res)) {
-
-    vote_data <- as.integer(nb_res$Best.nc[1, ])
-    vote_data <- vote_data[is.finite(vote_data)]
-    vote_data <- vote_data[vote_data >= min_k & vote_data <= max_k]
-
-    k_raw <- as.integer(names(which.max(table(vote_data))))
-
-  } else {
-
-    sil <- sapply(seq(min_k, max_k), function(k) {
-      km <- kmeans(pca_data, centers = k, nstart = 25)
-      mean(silhouette(km$cluster, dist(pca_data))[, 3], na.rm = TRUE)
-    })
-
-    # -----------------------------
-    # SILHOUETTE RULE (MODE SWITCH)
-    # -----------------------------
-    if (strict_mode) {
-      k_raw <- which.max(sil) + 1
-    } else {
-      k_raw <- which.max(sil) + min_k - 1
-    }
-
-    message(group_label, " | NbClust failed, silhouette k =", k_raw)
+  if (safe_max_k < 2) {
+    message(group_label, " | Too few rows for multi-cluster solution → single cluster.")
+    df$cluster <- factor(1)
+    df$k_used  <- 1L
+    return(df)
   }
 
   # -----------------------------
-  # 5. Clamp k
+  # 5. NbClust
   # -----------------------------
-  k_opt <- max(min_k, min(k_raw, max_k))
+  message(group_label, " | Running NbClust (min_k=", safe_min_k,
+          ", max_k=", safe_max_k, ")...")
+
+  nb_res <- tryCatch(
+    NbClust(pca_data,
+            min.nc = safe_min_k,
+            max.nc = safe_max_k,
+            method = "kmeans",
+            index  = "all"),
+    error = function(e) {
+      message(group_label, " | NbClust error: ", conditionMessage(e))
+      NULL
+    }
+  )
+
+  # Silhouette fallback — also used when vote_data is empty after filtering
+  .silhouette_k <- function(pca_data, safe_min_k, safe_max_k) {
+    ks  <- seq(safe_min_k, safe_max_k)
+    sil <- vapply(ks, function(k) {
+      tryCatch({
+        km  <- kmeans(pca_data, centers = k, nstart = 25)
+        mean(cluster::silhouette(km$cluster, dist(pca_data))[, 3], na.rm = TRUE)
+      }, error = function(e) NA_real_)
+    }, numeric(1))
+    best_idx <- which.max(sil)
+    if (length(best_idx) == 0 || is.na(best_idx)) return(safe_min_k)
+    ks[best_idx]
+  }
+
+  if (!is.null(nb_res)) {
+    vote_data <- as.integer(nb_res$Best.nc[1, ])
+    vote_data <- vote_data[is.finite(vote_data)]
+    vote_data <- vote_data[vote_data >= safe_min_k & vote_data <= safe_max_k]
+
+    if (length(vote_data) == 0) {
+      # All index votes fell outside the search range — use silhouette
+      message(group_label, " | NbClust votes all out of range — falling back to silhouette.")
+      k_raw <- .silhouette_k(pca_data, safe_min_k, safe_max_k)
+    } else {
+      k_raw <- as.integer(names(which.max(table(vote_data))))
+    }
+  } else {
+    k_raw <- .silhouette_k(pca_data, safe_min_k, safe_max_k)
+    message(group_label, " | Silhouette fallback k = ", k_raw)
+  }
+
+  # -----------------------------
+  # 6. Clamp k (safety net)
+  # -----------------------------
+  k_opt <- max(safe_min_k, min(as.integer(k_raw), safe_max_k))
 
   message(group_label, " | Final k =", k_opt)
 

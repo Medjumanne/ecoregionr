@@ -176,14 +176,18 @@ run_skater_clustering <- function(polygons_sf,
 
   X_pca <- pca_out$x[, seq_len(num_pcs), drop = FALSE]
 
-  # Optional elevation boost
+  # Optional elevation boost — NA-safe manual scaling
   if (!is.null(elev_col)) {
     if (!elev_col %in% names(polygons_sf))
       stop("`elev_col` '", elev_col, "' not found in `polygons_sf`.")
 
-    elev_raw     <- sf::st_drop_geometry(polygons_sf)[[elev_col]]
-    elev_scaled  <- as.numeric(scale(elev_raw)) * elev_weight
-    X_pca        <- cbind(X_pca, elev_boosted = elev_scaled)
+    elev_raw    <- sf::st_drop_geometry(polygons_sf)[[elev_col]]
+    elev_mu     <- mean(elev_raw, na.rm = TRUE)
+    elev_sd     <- sd(elev_raw,   na.rm = TRUE)
+    if (is.na(elev_sd) || elev_sd == 0) elev_sd <- 1
+    elev_scaled <- ((elev_raw - elev_mu) / elev_sd) * elev_weight
+    elev_scaled[is.na(elev_scaled)] <- 0   # impute missing rows with 0 (scaled mean)
+    X_pca <- cbind(X_pca, elev_boosted = elev_scaled)
     message("  Elevation boost applied (column '", elev_col,
             "', weight = ", elev_weight, ").")
   }
@@ -286,9 +290,24 @@ plot_skater_elbow <- function(polygons_sf,
 
   X_pca <- pca_out$x[, seq_len(num_pcs), drop = FALSE]
 
+  # Elevation boost — impute NA values with 0 (post-scaling mean) to avoid NaN
   if (!is.null(elev_col) && elev_col %in% names(polygons_sf)) {
-    elev_scaled <- as.numeric(scale(sf::st_drop_geometry(polygons_sf)[[elev_col]])) * elev_weight
+    elev_raw    <- sf::st_drop_geometry(polygons_sf)[[elev_col]]
+    elev_mu     <- mean(elev_raw, na.rm = TRUE)
+    elev_sd     <- sd(elev_raw,   na.rm = TRUE)
+    if (is.na(elev_sd) || elev_sd == 0) elev_sd <- 1
+    elev_scaled <- ((elev_raw - elev_mu) / elev_sd) * elev_weight
+    elev_scaled[is.na(elev_scaled)] <- 0
     X_pca <- cbind(X_pca, elev_boosted = elev_scaled)
+  }
+
+  # Drop any rows still containing non-finite values
+  finite_rows <- apply(X_pca, 1, function(r) all(is.finite(r)))
+  if (any(!finite_rows)) {
+    message("  Dropping ", sum(!finite_rows),
+            " row(s) with non-finite PCA scores from elbow computation.")
+    X_pca       <- X_pca[finite_rows, , drop = FALSE]
+    polygons_sf <- polygons_sf[finite_rows, ]
   }
 
   # Build MST once
@@ -297,10 +316,10 @@ plot_skater_elbow <- function(polygons_sf,
   listw <- spdep::nb2listw(nb, costs, style = "B")
   mst   <- spdep::mstree(listw)
 
-  # Compute SSE for k = 1 … max_k
+  # Compute SSE for k = 1 to max_k
   message("Computing SSE for k = 1 to ", max_k, " (this may take a moment)...")
   sse_values <- numeric(max_k)
-  sse_values[1] <- sum(apply(X_pca, 2, function(x) sum((x - mean(x))^2)))
+  sse_values[1] <- sum(apply(X_pca, 2, function(x) sum((x - mean(x, na.rm=TRUE))^2, na.rm=TRUE)))
 
   for (k in seq(2, max_k)) {
     sk_tmp  <- spdep::skater(mst[, 1:2], X_pca, ncuts = k - 1L)
@@ -308,8 +327,10 @@ plot_skater_elbow <- function(polygons_sf,
     sse_k   <- 0
     for (g in seq_len(k)) {
       cl_data <- X_pca[groups == g, , drop = FALSE]
-      if (nrow(cl_data) > 0)
-        sse_k <- sse_k + sum(scale(cl_data, scale = FALSE)^2)
+      if (nrow(cl_data) > 0) {
+        centered <- scale(cl_data, scale = FALSE)
+        sse_k    <- sse_k + sum(centered^2, na.rm = TRUE)
+      }
     }
     sse_values[k] <- sse_k
     message("  k = ", k, "  SSE = ", round(sse_k, 1))
