@@ -329,9 +329,14 @@ vars_for_clustering <- c(
   setdiff(names(lc_wide), ID_COL)
 )
 
-# Attach env_df back to the sf object for SKATER
+# Attach env_df to the sf object for SKATER.
+# We only join the categorical proportion columns (climate + land cover) since
+# adm2_stats already contains the numeric covariates. Joining env_df directly
+# would create duplicate columns (elev_median.x / elev_median.y etc.) and
+# break the vars_for_clustering name lookup.
+cat_only_cols <- c(ID_COL, setdiff(names(kg_wide), ID_COL), setdiff(names(lc_wide), ID_COL))
 adm2_sf <- adm2_stats %>%
-  dplyr::left_join(env_df, by = ID_COL) %>%
+  dplyr::left_join(env_df[, cat_only_cols], by = ID_COL) %>%
   sf::st_as_sf()
 ```
 

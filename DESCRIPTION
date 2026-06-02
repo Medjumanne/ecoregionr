@@ -5,7 +5,7 @@ Authors@R:
     person("Mohamed Jumanne", "Omari",
            email = "momari@ihi.or.tz",
            role  = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-HERE"))
+           comment = c(ORCID = "0000-0002-7677-6839"))
 Description: A comprehensive toolkit for data-driven environmental
     bioregionalization of administrative units using multi-source raster
     covariates (climate, elevation, land cover, population, species

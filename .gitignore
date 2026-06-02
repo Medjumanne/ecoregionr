@@ -1,1 +1,28 @@
+# R
 .Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+*.tar.gz
+
+# Large output and data files — do not commit these
+output*/
+*.html
+*.pdf
+*.png
+*.tif
+*.shp
+*.dbf
+*.shx
+*.prj
+*.cpg
+
+# Exception: keep the workflow Rmd
+!ecoregionr_dual_workflow.Rmd
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
