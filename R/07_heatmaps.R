@@ -22,9 +22,11 @@ make_cluster_heatmap <- function(data,
                                                   "Shape_Area", "FID_1"),
                                  cat_threshold = 0.01) {
 
+  group_vars <- if (!is.null(facet_by)) c(cluster_col, facet_by) else cluster_col
+
   heatmap_data <- data |>
     filter(.data[[group_col]] == group_name) |>
-    group_by(.data[[cluster_col]], .data[[facet_by]]) |>     # Support faceting
+    group_by(dplyr::across(dplyr::all_of(group_vars))) |>
     summarise(across(where(is.numeric), \(x) mean(x, na.rm = TRUE)),
               .groups = "drop") |>
     select(-any_of(exclude_cols)) |>
