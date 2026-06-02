@@ -1,5 +1,5 @@
 Package: ecoregionr
-Title: Environmental Bioregionalization and Clustering Toolkit for Africa
+Title: Environmental Bioregionalization and Clustering Toolkit
 Version: 0.3.0
 Authors@R:
     person("Mohamed Jumanne", "Omari",
@@ -21,7 +21,7 @@ Description: A comprehensive toolkit for data-driven environmental
     natural-language bioregion descriptions.  The package was developed
     for the Vector Grid Africa programme but is fully generic and can be
     applied to any country or region.
-License: MIT + file LICENSE
+License: CC BY 4.0
 URL: https://github.com/Medjumanne/ecoregionr
 BugReports: https://github.com/Medjumanne/ecoregionr/issues
 Encoding: UTF-8

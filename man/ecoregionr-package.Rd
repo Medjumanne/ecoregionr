@@ -67,8 +67,8 @@ For full reproducibility, record your session state with
 
 If you use this package in published research, please cite:
 
-Omari, M. J. (2025). ecoregionr: Environmental Bioregionalization and
-Clustering Toolkit for Africa. R package version 0.3.0.
+Jumanne, M. (2025). ecoregionr: Environmental Bioregionalization and
+Clustering Toolkit. R package version 0.3.0.
 \url{https://github.com/Medjumanne/ecoregionr}
 }
 

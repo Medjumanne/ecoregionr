@@ -360,43 +360,57 @@ sides of the country can be assigned to the same cluster if they share similar
 environmental conditions. This is the method's strength for scientific insight
 but its limitation for operational planning.
 
-## Elevation banding (optional constraint)
+## Elevation banding — an optional stratification
 
-We optionally stratify the clustering by elevation band before running k-means.
-This is a *soft* constraint: we split the data into lowland / midland / highland
-strata and cluster within each stratum separately. The motivation is ecological:
-the environmental drivers of malaria transmission differ fundamentally between
-a coastal lowland and a highland forest, so pooling them in a single PCA can
-obscure within-stratum structure.
+Elevation banding is a **soft, optional constraint** that splits the data into
+elevation strata (lowland / midland / highland) and runs k-means independently
+within each stratum.  Use it when you expect the key environmental gradients to
+differ fundamentally between altitudinal zones — for example, malaria drivers
+in coastal lowlands vs. highland forests are so different that pooling them in
+one PCA can mask within-stratum structure.
+
+**When to skip it:** If your study area is relatively flat, or you want a single
+set of clusters that spans all elevations, set `USE_ELEV_BAND <- FALSE` below
+and `constraint_mode = "none"` in `run_clustering()`.
+
+```{r kmeans-options}
+# ── Toggle elevation banding here ────────────────────────────────────────────
+USE_ELEV_BAND <- TRUE    # set FALSE to run a single unconstrained clustering
+
+MIN_K   <- 6
+MAX_K   <- 15
+PCA_VAR <- 0.90
+NSTART  <- 50
+```
 
 ```{r kmeans-elev-band}
-env_df <- env_df %>%
-  dplyr::mutate(
-    elev_band = dplyr::case_when(
-      elev_median < 300  ~ "lowland",
-      elev_median < 900  ~ "midland",
-      TRUE               ~ "highland"
-    ),
-    elev_band = factor(elev_band, levels = c("lowland", "midland", "highland"),
-                       ordered = TRUE)
-  )
-
-table(env_df$elev_band)
+if (USE_ELEV_BAND) {
+  env_df <- env_df %>%
+    dplyr::mutate(
+      elev_band = dplyr::case_when(
+        elev_median < 300 ~ "lowland",
+        elev_median < 900 ~ "midland",
+        TRUE              ~ "highland"
+      ),
+      elev_band = factor(elev_band,
+                         levels  = c("lowland", "midland", "highland"),
+                         ordered = TRUE)
+    )
+  message("Elevation banding ON — stratum counts:")
+  print(table(env_df$elev_band))
+} else {
+  message("Elevation banding OFF — single clustering across all elevations.")
+}
 ```
 
 ## Run PCA + k-means clustering
 
 ```{r run-kmeans, message=TRUE}
-MIN_K  <- 6
-MAX_K  <- 15
-PCA_VAR <- 0.90
-NSTART  <- 50
-
 clusters_km <- run_clustering(
   df              = env_df,
   weights         = NULL,
-  constraint_var  = "elev_band",
-  constraint_mode = "split",
+  constraint_var  = if (USE_ELEV_BAND) "elev_band" else NULL,
+  constraint_mode = if (USE_ELEV_BAND) "split"     else "none",
   group_col       = GROUP_COL,
   id_col          = ID_COL,
   min_k           = MIN_K,
@@ -407,7 +421,7 @@ clusters_km <- run_clustering(
   seed            = SEED
 )
 
-# Summary: how many clusters per stratum?
+# Summary: how many clusters (and strata, if banded)?
 clusters_km %>%
   dplyr::group_by(.data[[GROUP_COL]]) %>%
   dplyr::summarise(n_units = dplyr::n(), k = dplyr::first(k_used), .groups = "drop")
@@ -463,12 +477,13 @@ adm2_km <- adm2_km %>%
   ) %>%
   dplyr::ungroup()
 
-# Static map
+# Country border for both maps
 countries_sf <- rnaturalearth::ne_countries(
   country = if (!is.null(STUDY_GROUPS)) STUDY_GROUPS else COUNTRY_NAME,
   returnclass = "sf"
 )
 
+# Static map
 map_km <- make_static_map(
   polygons_clustered = adm2_km,
   cluster_col        = "cluster",
@@ -480,6 +495,35 @@ map_km <- make_static_map(
   keep_prop          = 0.02
 )
 print(map_km)
+```
+
+## Interactive Leaflet map (k-means)
+
+```{r kmeans-leaflet}
+label_fn_km <- function(row) {
+  htmltools::HTML(paste0(
+    "<strong>", row[[UNIT_COL]], " (Cluster ", row$cluster, ")</strong><br/>",
+    "<hr style='margin:4px 0;'>",
+    "<strong>Elevation:</strong> ",        round(row$elev_median,    1), " m<br/>",
+    "<strong>Population:</strong> ",       round(row$pop_mean,       1), " /km²<br/>",
+    "<strong>Mosquito Richness:</strong> ", row$mosquitoRich_max,          "<br/>",
+    "<strong>Urban:</strong> ",            sprintf("%.3f", row$urban_mean),    "<br/>",
+    "<strong>Transport:</strong> ",        sprintf("%.3f", row$transport_mean), "<br/>",
+    "<strong>Climate:</strong><br/>",      row$kg_popup,                  "<br/>",
+    "<strong>Land cover:</strong><br/>",   row$lc_popup
+  ))
+}
+
+intr_map_km <- build_leaflet_map(
+  polygons_clustered = adm2_km,
+  cluster_col        = "cluster",
+  label_fn           = label_fn_km,
+  border_sf          = countries_sf,
+  palette_option     = "turbo",
+  title              = "Bioregions (PCA + k-means)"
+)
+
+intr_map_km
 ```
 
 ---
@@ -512,6 +556,27 @@ every subtree (cluster) is by construction a connected region. The trade-off
 is that two environmentally identical but geographically distant districts
 cannot be merged — they must be in different clusters.
 
+## SKATER options
+
+The elevation boost (`elev_col` / `elev_weight`) is **optional**.  When
+enabled, a scaled, multiplied copy of the elevation column is appended to the
+PC-score matrix before the MST is built — this makes the algorithm prefer
+cutting MST edges that cross large elevation changes, so highland and lowland
+districts end up in different clusters.
+
+**When to skip it:** If elevation is already well-captured by the first PCs
+(check the loading plot after running), or if your clustering variables don't
+include elevation, set `USE_ELEV_BOOST <- FALSE`.
+
+```{r skater-options}
+# ── Toggle elevation boost here ───────────────────────────────────────────────
+USE_ELEV_BOOST    <- TRUE    # set FALSE to skip the elevation multiplier
+ELEV_BOOST_COL    <- "elev_median"
+ELEV_BOOST_WEIGHT <- 7       # multiplier applied to the scaled elev vector
+
+N_CLUSTERS_SKATER <- 15      # adjust after inspecting the elbow plot below
+```
+
 ## Selecting k with the elbow method
 
 Before running SKATER we use an elbow plot to guide the choice of *k*. The
@@ -525,17 +590,13 @@ elbow_plot <- plot_skater_elbow(
   vars           = vars_for_clustering,
   max_k          = 20,
   pca_var        = 0.95,
-  elev_col       = "elev_median",
-  elev_weight    = 7,
+  elev_col       = if (USE_ELEV_BOOST) ELEV_BOOST_COL    else NULL,
+  elev_weight    = if (USE_ELEV_BOOST) ELEV_BOOST_WEIGHT else 1,
   dist_threshold = 45000
 )
 ```
 
-Based on the elbow above, choose the number of clusters:
-
-```{r skater-nclust}
-N_CLUSTERS_SKATER <- 15   # <-- adjust based on the elbow plot
-```
+Inspect the plot, then update `N_CLUSTERS_SKATER` in the options chunk above.
 
 ## Run SKATER clustering
 
@@ -545,15 +606,14 @@ adm2_sf <- run_skater_clustering(
   vars           = vars_for_clustering,
   n_clusters     = N_CLUSTERS_SKATER,
   pca_var        = 0.95,
-  elev_col       = "elev_median",   # boost elevation influence
-  elev_weight    = 7,
+  elev_col       = if (USE_ELEV_BOOST) ELEV_BOOST_COL    else NULL,
+  elev_weight    = if (USE_ELEV_BOOST) ELEV_BOOST_WEIGHT else 1,
   dist_threshold = 45000,
   k_fallback     = 1,
   seed           = SEED,
   cluster_col    = "skater_cluster"
 )
 
-# Quick tabulation
 table(adm2_sf$skater_cluster)
 ```
 
@@ -612,37 +672,44 @@ map_skater <- ggplot2::ggplot(adm2_sf) +
 print(map_skater)
 ```
 
-## Interactive Leaflet map
+## Interactive Leaflet map (SKATER)
 
-```{r skater-leaflet, eval=FALSE}
-# Build popup strings for climate and land cover
-climate_cols  <- intersect(names(adm2_sf), unname(KG_LOOKUP))
+```{r skater-leaflet}
+# Build climate and land-cover popup strings using cur_data() (safe with spaces in names)
+climate_cols   <- intersect(names(adm2_sf), unname(KG_LOOKUP))
 landcover_cols <- intersect(names(adm2_sf), unname(LC_LOOKUP))
 
-safe_popup_cols <- function(sf_obj, col_names) {
-  sf_obj %>%
-    dplyr::rowwise() %>%
-    dplyr::mutate(popup_text = paste(
-      Filter(Negate(is.null), lapply(col_names, function(x) {
+adm2_sf <- adm2_sf %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(
+    kg_popup_sk = paste(
+      Filter(Negate(is.null), lapply(climate_cols, function(x) {
         val <- dplyr::cur_data()[[x]]
         if (!is.na(val) && val > 0) paste0(x, ": ", sprintf("%.3f", val))
       })),
       collapse = "<br/>"
-    )) %>%
-    dplyr::ungroup()
-}
-
-adm2_sf <- safe_popup_cols(adm2_sf, climate_cols)
+    ),
+    lc_popup_sk = paste(
+      Filter(Negate(is.null), lapply(landcover_cols, function(x) {
+        val <- dplyr::cur_data()[[x]]
+        if (!is.na(val) && val > 0) paste0(x, ": ", sprintf("%.3f", val))
+      })),
+      collapse = "<br/>"
+    )
+  ) %>%
+  dplyr::ungroup()
 
 label_fn_skater <- function(row) {
   htmltools::HTML(paste0(
     "<strong>", row[[UNIT_COL]], " (Cluster ", row$skater_cluster, ")</strong><br/>",
     "<hr style='margin:4px 0;'>",
-    "<strong>Elevation:</strong> ", round(row$elev_median, 1), " m<br/>",
-    "<strong>Population:</strong> ", round(row$pop_mean, 1), " /km²<br/>",
-    "<strong>Mosquito Richness:</strong> ", row$mosquitoRich_max, "<br/>",
-    "<strong>Urban:</strong> ", sprintf("%.3f", row$urban_mean), "<br/>",
-    "<strong>Transport:</strong> ", sprintf("%.3f", row$transport_mean), "<br/>"
+    "<strong>Elevation:</strong> ",         round(row$elev_median,    1), " m<br/>",
+    "<strong>Population:</strong> ",        round(row$pop_mean,       1), " /km²<br/>",
+    "<strong>Mosquito Richness:</strong> ", row$mosquitoRich_max,          "<br/>",
+    "<strong>Urban:</strong> ",             sprintf("%.3f", row$urban_mean),    "<br/>",
+    "<strong>Transport:</strong> ",         sprintf("%.3f", row$transport_mean), "<br/>",
+    "<strong>Climate:</strong><br/>",       row$kg_popup_sk,               "<br/>",
+    "<strong>Land cover:</strong><br/>",    row$lc_popup_sk
   ))
 }
 

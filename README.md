@@ -1,10 +1,10 @@
 # ecoregionr <img src="man/figures/logo.png" align="right" height="120" alt="ecoregionr logo"/>
 
-> **Environmental Bioregionalization and Clustering Toolkit for Africa**
+> **Environmental Bioregionalization and Clustering Toolkit **
 
 <!-- badges -->
 [![R package](https://img.shields.io/badge/R%20package-v0.3.0-blue)](https://github.com/Medjumanne/ecoregionr)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html)
 
 ---
@@ -193,8 +193,8 @@ renv::snapshot()   # if using renv for dependency management
 If you use `ecoregionr` in published research, please cite:
 
 ```
-Omari, M. J. (2025). ecoregionr: Environmental Bioregionalization and
-Clustering Toolkit for Africa. R package version 0.3.0.
+Jumanne, M. (2025). ecoregionr: Environmental Bioregionalization and
+Clustering Toolkit. R package version 0.3.0.
 https://github.com/Medjumanne/ecoregionr
 ```
 
@@ -218,7 +218,7 @@ opening a pull request. Bug reports and feature requests go to the
 
 ## License
 
-MIT © 2025 Mohamed Jumanne Omari. See [LICENSE](LICENSE) for full terms.
+CC BY 4.0 © 2025 Mohamed Jumanne Omari. See [LICENSE](LICENSE) for full terms.
 
 ---
 
